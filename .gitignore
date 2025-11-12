@@ -114,8 +114,12 @@ site/
 *.vdi
 *.iso
 
+# Logs
+logs/
+*.log
+
 # Keep important files
-!configs/bmad_automation_config.yaml
-!configs/epic_template.yaml
+!configs/default.yaml
 !requirements.txt
 !.gitkeep
+!docs/**/*.md
