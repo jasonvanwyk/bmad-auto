@@ -29,6 +29,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import print as rprint
 
+# Import context management
+from src.context_manager import StoryHandoff, AgentValidator
+
 
 class StoryDevelopmentMVP:
     """
@@ -173,6 +176,9 @@ class StoryDevelopmentMVP:
         self.console.print(f"\n[cyan]═══ Story {story_num}/{total}: {story_id} ═══[/cyan]")
         self.console.print(f"[dim]{story_title}[/dim]\n")
 
+        # Initialize handoff manager for context control
+        handoff = StoryHandoff(story_id, self.project_path)
+
         results = {
             'story_id': story_id,
             'title': story_title,
@@ -194,6 +200,7 @@ class StoryDevelopmentMVP:
             agent='sm',
             task='create-next-story',
             context=story,
+            handoff=handoff,
             timeout=300  # 5 minutes
         )
         results['stages']['sm'] = sm_result
@@ -201,32 +208,54 @@ class StoryDevelopmentMVP:
         if not sm_result['success']:
             self.console.print(f"  [red]✗ SM failed: {sm_result.get('error', 'Unknown error')}[/red]")
             results['success'] = False
+            handoff.cleanup()
             return results
 
         self.console.print("  [green]✓ Story drafted[/green]")
+        # Update handoff with SM summary
+        handoff.add_stage_summary('sm', sm_result.get('summary', 'Story drafted'))
 
         # Stage 2: PO Validation
         self.console.print("[yellow]→ PO:[/yellow] Validating story...")
         po_result = await self.execute_agent(
             agent='po',
             task='validate-next-story',
-            context={'story_file': sm_result.get('output_file', story_id)},
+            context=handoff.get_context_for_stage('po'),
+            handoff=handoff,
             timeout=180  # 3 minutes
         )
         results['stages']['po'] = po_result
 
+        # STRICT PO VALIDATION - No longer "continue anyway"
         if not po_result['success']:
-            self.console.print(f"  [yellow]⚠ PO validation had issues[/yellow]")
-            # Continue anyway for MVP
-        else:
-            self.console.print("  [green]✓ Story validated[/green]")
+            self.console.print(f"  [red]✗ PO validation failed: {po_result.get('error', 'Unknown error')}[/red]")
+            results['success'] = False
+            handoff.cleanup()
+            return results
+
+        # Validate PO made explicit decision
+        is_valid, validation_msg = AgentValidator.validate_po_output(
+            po_result.get('stdout', ''),
+            handoff
+        )
+
+        if not is_valid:
+            self.console.print(f"  [red]✗ PO VALIDATION ERROR: {validation_msg}[/red]")
+            self.console.print(f"  [yellow]⚠ PO must explicitly APPROVE, BLOCK, or request CHANGES[/yellow]")
+            results['success'] = False
+            results['po_validation_error'] = validation_msg
+            handoff.cleanup()
+            return results
+
+        self.console.print(f"  [green]✓ Story validated - Decision: {validation_msg}[/green]")
 
         # Stage 3: Dev Implementation
         self.console.print("[yellow]→ Dev:[/yellow] Implementing story...")
         dev_result = await self.execute_agent(
             agent='dev',
             task='develop-story',
-            context={'story_file': sm_result.get('output_file', story_id)},
+            context=handoff.get_context_for_stage('dev'),
+            handoff=handoff,
             timeout=900  # 15 minutes
         )
         results['stages']['dev'] = dev_result
@@ -234,7 +263,19 @@ class StoryDevelopmentMVP:
         if not dev_result['success']:
             self.console.print(f"  [red]✗ Dev failed: {dev_result.get('error', 'Unknown error')}[/red]")
             results['success'] = False
+            handoff.cleanup()
             return results
+
+        # Validate Dev made file changes
+        is_valid, validation_msg = AgentValidator.validate_dev_output(
+            dev_result.get('stdout', ''),
+            handoff
+        )
+
+        if not is_valid:
+            self.console.print(f"  [yellow]⚠ Dev validation warning: {validation_msg}[/yellow]")
+        else:
+            self.console.print(f"  [green]✓ {validation_msg}[/green]")
 
         self.console.print("  [green]✓ Story implemented[/green]")
 
@@ -243,34 +284,77 @@ class StoryDevelopmentMVP:
         qa_result = await self.execute_agent(
             agent='qa',
             task='test-story',
-            context={'implementation_path': dev_result.get('output_path', '.')},
+            context=handoff.get_context_for_stage('qa'),
+            handoff=handoff,
             timeout=600  # 10 minutes
         )
         results['stages']['qa'] = qa_result
 
+        # Validate QA results
+        is_valid, validation_msg = AgentValidator.validate_qa_output(
+            qa_result.get('stdout', ''),
+            handoff
+        )
+
         # Determine final status
-        if qa_result['success']:
+        if qa_result['success'] and is_valid:
             self.console.print("  [green]✓ All tests passed![/green]")
             results['success'] = True
         else:
+            if not is_valid:
+                self.console.print(f"  [yellow]⚠ QA validation issue: {validation_msg}[/yellow]")
             self.console.print("  [yellow]⚠ QA found issues[/yellow]")
-            # In full system, would retry Dev here
             results['success'] = False
 
         results['end_time'] = datetime.now().isoformat()
+
+        # Cleanup handoff file if story completed successfully
+        if results['success']:
+            handoff.cleanup()
+
         return results
 
-    async def execute_agent(self, agent: str, task: str, context: Dict, timeout: int) -> Dict:
-        """Execute BMad agent with safety wrapper."""
+    async def execute_agent(self, agent: str, task: str, context: Dict, handoff: StoryHandoff, timeout: int) -> Dict:
+        """
+        Execute BMad agent with safety wrapper and context management.
+
+        Each agent runs with:
+        - Fresh context (no accumulation)
+        - Minimal handoff data
+        - Automatic summary extraction
+        """
 
         if self.dry_run:
             # Simulate execution in dry run mode
             await asyncio.sleep(1)
+            # Simulate handoff updates
+            decision = "APPROVED" if agent == 'po' else None
+            summary = f"{agent.upper()} completed {task}"
+
+            # Simulate realistic output with validation markers
+            stdout_sim = f"{summary}\n"
+            if agent == 'po':
+                stdout_sim += "Decision: APPROVED\n"
+                stdout_sim += "All acceptance criteria validated.\n"
+            elif agent == 'dev':
+                stdout_sim += "Modified: src/example.py\n"
+                stdout_sim += "Created: tests/test_example.py\n"
+                handoff.add_file_modified("src/example.py", "modified")
+                handoff.add_file_modified("tests/test_example.py", "created")
+            elif agent == 'qa':
+                stdout_sim += "Test Results: PASS\n"
+                stdout_sim += "All tests completed successfully.\n"
+
+            handoff.add_stage_summary(agent, summary, decision)
+
             return {
                 'success': True,
                 'dry_run': True,
                 'agent': agent,
                 'task': task,
+                'summary': summary,
+                'decision': decision,
+                'stdout': stdout_sim,
                 'output_file': f"/tmp/{agent}_{task}_output.md",
                 'output_path': str(self.project_path)
             }
@@ -280,8 +364,9 @@ class StoryDevelopmentMVP:
         with open(context_file, 'w') as f:
             yaml.dump(context, f)
 
-        # Build command
-        cmd = f"bmad {agent} --task {task} --context {context_file} --headless"
+        # Build command with context clearing flag
+        # --new-session ensures agent starts with fresh context (prevents bloat)
+        cmd = f"bmad {agent} --task {task} --context {context_file} --headless --new-session"
 
         # Add safety wrapper if in VM
         if self.vm_safe_mode:
@@ -303,25 +388,63 @@ class StoryDevelopmentMVP:
 
             success = process.returncode == 0
 
-            # Parse output for file paths
+            # Parse output for file paths, summaries, and decisions
             output_file = None
             output_path = str(self.project_path)
+            summary = ""
+            decision = None
 
             if success and stdout:
-                for line in stdout.decode().split('\n'):
-                    if 'output:' in line.lower() or 'file:' in line.lower():
+                stdout_str = stdout.decode()
+                for line in stdout_str.split('\n'):
+                    line_lower = line.lower()
+
+                    if 'output:' in line_lower or 'file:' in line_lower:
                         parts = line.split(':', 1)
                         if len(parts) > 1:
                             output_file = parts[1].strip()
-                    if 'path:' in line.lower():
+
+                    if 'path:' in line_lower:
                         parts = line.split(':', 1)
                         if len(parts) > 1:
                             output_path = parts[1].strip()
+
+                    # Extract decision for PO
+                    if agent == 'po' and ('decision:' in line_lower or 'status:' in line_lower):
+                        parts = line.split(':', 1)
+                        if len(parts) > 1:
+                            decision = parts[1].strip().upper()
+
+                    # Extract summary
+                    if 'summary:' in line_lower:
+                        parts = line.split(':', 1)
+                        if len(parts) > 1:
+                            summary = parts[1].strip()
+
+                    # Track file modifications for Dev
+                    if agent == 'dev' and ('created:' in line_lower or 'modified:' in line_lower or 'updated:' in line_lower):
+                        parts = line.split(':', 1)
+                        if len(parts) > 1:
+                            file_path = parts[1].strip()
+                            action = "modified"
+                            if 'created:' in line_lower:
+                                action = "created"
+                            handoff.add_file_modified(file_path, action)
+
+                # Use first 500 chars of output as summary if none found
+                if not summary and stdout_str:
+                    summary = stdout_str[:500].replace('\n', ' ').strip()
+
+            # Update handoff with stage results
+            if success:
+                handoff.add_stage_summary(agent, summary or f"{agent} completed", decision)
 
             return {
                 'success': success,
                 'agent': agent,
                 'task': task,
+                'summary': summary,
+                'decision': decision,
                 'stdout': stdout.decode()[:5000] if stdout else "",
                 'stderr': stderr.decode()[:2000] if stderr else "",
                 'output_file': output_file,
