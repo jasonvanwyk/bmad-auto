@@ -217,10 +217,12 @@ class StoryDevelopmentMVP:
 
         # Stage 2: PO Validation
         self.console.print("[yellow]→ PO:[/yellow] Validating story...")
+        po_context, po_tokens = handoff.get_context_for_stage('po')
+        self.console.print(f"  [dim]Context size: ~{po_tokens:,} tokens[/dim]")
         po_result = await self.execute_agent(
             agent='po',
             task='validate-next-story',
-            context=handoff.get_context_for_stage('po'),
+            context=po_context,
             handoff=handoff,
             timeout=180  # 3 minutes
         )
@@ -251,10 +253,12 @@ class StoryDevelopmentMVP:
 
         # Stage 3: Dev Implementation
         self.console.print("[yellow]→ Dev:[/yellow] Implementing story...")
+        dev_context, dev_tokens = handoff.get_context_for_stage('dev')
+        self.console.print(f"  [dim]Context size: ~{dev_tokens:,} tokens[/dim]")
         dev_result = await self.execute_agent(
             agent='dev',
             task='develop-story',
-            context=handoff.get_context_for_stage('dev'),
+            context=dev_context,
             handoff=handoff,
             timeout=900  # 15 minutes
         )
@@ -281,10 +285,12 @@ class StoryDevelopmentMVP:
 
         # Stage 4: QA Testing
         self.console.print("[yellow]→ QA:[/yellow] Testing implementation...")
+        qa_context, qa_tokens = handoff.get_context_for_stage('qa')
+        self.console.print(f"  [dim]Context size: ~{qa_tokens:,} tokens[/dim]")
         qa_result = await self.execute_agent(
             agent='qa',
             task='test-story',
-            context=handoff.get_context_for_stage('qa'),
+            context=qa_context,
             handoff=handoff,
             timeout=600  # 10 minutes
         )

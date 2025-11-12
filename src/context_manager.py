@@ -2,6 +2,7 @@
 context_manager.py - Lightweight context management for agent handoffs
 
 Prevents context bloat while maintaining necessary continuity between agents.
+Enforces strict token limits to prevent context window overflow.
 """
 
 import json
@@ -11,15 +12,38 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 
+def estimate_tokens(text: str) -> int:
+    """
+    Estimate token count for text.
+    Uses rough approximation: 1 token ≈ 4 characters for English text.
+    This is conservative (overestimates) to ensure safety.
+
+    For precise counting, would use tiktoken, but this is adequate for limits.
+    """
+    if not text:
+        return 0
+    # Conservative estimate: 1 token per 3.5 chars (vs actual ~4 chars/token)
+    return int(len(text) / 3.5) + 1
+
+
 class StoryHandoff:
     """
     Manages lightweight context handoffs between agents.
     Ensures context stays focused and doesn't bloat.
+    Enforces strict token limits for agent safety.
     """
 
+    # Character limits (conservative to prevent token overflow)
     MAX_SUMMARY_LENGTH = 2000  # characters
     MAX_ACCEPTANCE_CRITERIA = 10  # items
     MAX_FILES_TRACKED = 20  # files
+
+    # Token limits (CRITICAL - prevents context window overflow)
+    # Agent context window: 200k tokens
+    # Reserve space for: system prompts, story details, code, responses
+    # Max context passed to agent: 50k tokens (25% of window - very safe)
+    MAX_CONTEXT_TOKENS = 50000
+    WARN_CONTEXT_TOKENS = 40000  # Warn at 80% of max
 
     def __init__(self, story_id: str, project_path: Path):
         self.story_id = story_id
@@ -95,10 +119,13 @@ class StoryHandoff:
         })
         self._save()
 
-    def get_context_for_stage(self, stage: str) -> Dict:
+    def get_context_for_stage(self, stage: str) -> tuple[Dict, int]:
         """
-        Get minimal context needed for next stage.
+        Get minimal context needed for next stage with token count.
         Returns only essential information to prevent bloat.
+
+        Returns:
+            (context_dict, estimated_tokens)
         """
         context = {
             'story_id': self.story_id,
@@ -136,7 +163,24 @@ class StoryHandoff:
         if self.data['blockers']:
             context['blockers'] = self.data['blockers'][-3:]  # Last 3 blockers only
 
-        return context
+        # Convert to YAML string to count tokens accurately
+        context_yaml = yaml.dump(context, default_flow_style=False)
+        token_count = estimate_tokens(context_yaml)
+
+        # Safety check - should never exceed limit due to truncation
+        if token_count > self.MAX_CONTEXT_TOKENS:
+            # Emergency truncation - this should rarely happen
+            print(f"⚠️  WARNING: Context at {token_count} tokens, exceeds {self.MAX_CONTEXT_TOKENS}. Truncating...")
+            # Aggressively truncate summaries
+            for stage_name, stage_data in context.get('previous_stages', {}).items():
+                if 'summary' in stage_data:
+                    stage_data['summary'] = stage_data['summary'][:200] + "... [truncated]"
+
+            # Recount
+            context_yaml = yaml.dump(context, default_flow_style=False)
+            token_count = estimate_tokens(context_yaml)
+
+        return context, token_count
 
     def validate_po_decision(self) -> tuple[bool, str]:
         """
