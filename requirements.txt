@@ -1,0 +1,43 @@
+# BMad Automation System - Python Dependencies
+# Python 3.10+ required
+
+# Core Dependencies
+libtmux>=0.37.0              # Tmux session management
+rich>=13.7.0                 # Rich terminal UI
+click>=8.1.7                 # CLI framework
+pyyaml>=6.0.1               # YAML configuration
+asyncio>=3.4.3              # Async execution
+aiofiles>=23.2.1            # Async file operations
+
+# LangChain & AI Orchestration
+langchain>=0.1.0            # Agent framework
+langchain-community>=0.0.10  # Community integrations
+langgraph>=0.0.26           # State machine orchestration
+
+# Development & Testing
+pytest>=7.4.3               # Testing framework
+pytest-asyncio>=0.21.1      # Async test support
+black>=23.12.0              # Code formatting
+ruff>=0.1.8                 # Linting
+ipython>=8.18.0             # Interactive debugging
+
+# Monitoring & Observability
+watchdog>=3.0.0             # File system monitoring
+psutil>=5.9.6               # System resource monitoring
+
+# Optional Dependencies (uncomment if needed)
+# prompt-toolkit>=3.0.41     # Advanced prompts
+# httpx>=0.25.2             # HTTP client for API calls
+# redis>=5.0.1              # For distributed state
+# celery>=5.3.4             # For task queue
+# fastapi>=0.104.1          # For web dashboard
+# uvicorn>=0.24.0           # ASGI server
+# win10toast>=0.9           # Windows notifications (Windows only)
+
+# Documentation
+# sphinx>=7.2.6             # Documentation generation
+# sphinx-rtd-theme>=2.0.0   # ReadTheDocs theme
+
+# Version constraints for stability
+python-dotenv>=1.0.0        # Environment variables
+typing-extensions>=4.8.0    # Type hints backport

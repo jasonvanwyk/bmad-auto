@@ -1,0 +1,161 @@
+# Epic Configuration Template
+# Copy this file to your project's docs/epics/<epic-id>/stories.yaml
+
+# Epic metadata
+epic_id: epic-1
+title: "Epic Title Here"
+description: |
+  Detailed description of what this epic accomplishes.
+  Can be multiple lines.
+
+# Epic settings (optional, overrides global config)
+settings:
+  parallel_stories: 2
+  max_retries: 3
+  agent_models:
+    dev: sonnet
+    qa: haiku
+
+# Prerequisites (files that must exist)
+prerequisites:
+  - docs/prd.md
+  - docs/architecture.md
+
+# Epic-level acceptance criteria
+acceptance_criteria:
+  - "All stories completed successfully"
+  - "Test coverage above 80%"
+  - "No critical bugs"
+  - "Documentation updated"
+
+# Story definitions
+stories:
+  - id: story-1
+    title: "First Story Title"
+    description: |
+      Detailed description of what this story implements.
+
+    # Story type: feature, bug, enhancement, refactor, test
+    type: feature
+
+    # Priority: high, medium, low
+    priority: high
+
+    # Estimated complexity: small, medium, large, xl
+    size: medium
+
+    # Dependencies on other stories
+    dependencies: []
+
+    # Acceptance criteria for this story
+    acceptance_criteria:
+      - "Criteria 1"
+      - "Criteria 2"
+      - "Criteria 3"
+
+    # Technical implementation notes
+    technical_notes: |
+      Any technical details the dev agent should know.
+      API endpoints, database schemas, etc.
+
+    # Testing requirements
+    testing_requirements:
+      - "Unit tests for all functions"
+      - "Integration tests for API"
+      - "Performance benchmarks"
+
+    # Files to modify/create (helps agents understand scope)
+    files:
+      create:
+        - src/new_module.py
+        - tests/test_new_module.py
+      modify:
+        - src/existing_module.py
+        - README.md
+
+  - id: story-2
+    title: "Second Story Title"
+    description: |
+      Another story description.
+
+    type: feature
+    priority: medium
+    size: small
+
+    # This story depends on story-1
+    dependencies:
+      - story-1
+
+    acceptance_criteria:
+      - "Builds on story-1 functionality"
+      - "Adds new capability"
+
+    technical_notes: |
+      Technical details specific to this story.
+
+    testing_requirements:
+      - "Test interaction with story-1 features"
+      - "Edge case testing"
+
+    files:
+      create:
+        - src/another_module.py
+      modify:
+        - src/new_module.py
+
+  - id: story-3
+    title: "Third Story Title"
+    description: |
+      Final story in the epic.
+
+    type: enhancement
+    priority: low
+    size: small
+
+    dependencies:
+      - story-1
+      - story-2
+
+    acceptance_criteria:
+      - "Polishes features from previous stories"
+      - "Adds finishing touches"
+
+    technical_notes: |
+      Refinement and optimization notes.
+
+    testing_requirements:
+      - "Full integration testing"
+      - "User acceptance testing"
+
+    files:
+      modify:
+        - src/new_module.py
+        - src/another_module.py
+        - docs/user_guide.md
+
+# Post-epic tasks (manual)
+post_epic_tasks:
+  - "Code review by senior developer"
+  - "Deploy to staging environment"
+  - "Run performance benchmarks"
+  - "Update documentation"
+  - "Create demo video"
+
+# Success metrics
+metrics:
+  - name: "Test Coverage"
+    target: "80%"
+    measurement: "pytest --cov"
+
+  - name: "Performance"
+    target: "<100ms response time"
+    measurement: "benchmark.py"
+
+  - name: "Code Quality"
+    target: "A rating"
+    measurement: "pylint src/"
+
+# Notes for human reviewers
+notes: |
+  Any additional context or considerations for this epic.
+  Special requirements, constraints, or warnings.
